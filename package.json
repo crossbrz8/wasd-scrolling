@@ -1,0 +1,18 @@
+{
+  "name": "wasd-scroll-extension",
+  "version": "1.3.0",
+  "description": "Scroll web pages using WASD keys. Toggle on/off with Alt+S.",
+  "type": "module",
+  "scripts": {
+    "dev": "wxt",
+    "dev:firefox": "wxt -b firefox",
+    "build": "wxt build",
+    "build:firefox": "wxt build -b firefox",
+    "zip": "wxt zip",
+    "zip:firefox": "wxt zip -b firefox",
+    "postinstall": "wxt prepare"
+  },
+  "devDependencies": {
+    "wxt": "^0.21.4"
+  }
+}

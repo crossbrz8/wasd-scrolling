@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WASD Scroller</title>
+  <style>
+    /* ─────────────────────────────────────────────────────────────────────
+       Geist — bundled in public/fonts, MV3-safe (no CDN)
+    ───────────────────────────────────────────────────────────────────── */
+    @font-face {
+      font-family: "Geist";
+      src: url("/fonts/Geist-Regular.woff2") format("woff2");
+      font-weight: 400; font-style: normal; font-display: block;
+    }
+    @font-face {
+      font-family: "Geist";
+      src: url("/fonts/Geist-Medium.woff2") format("woff2");
+      font-weight: 500; font-style: normal; font-display: block;
+    }
+    @font-face {
+      font-family: "Geist";
+      src: url("/fonts/Geist-SemiBold.woff2") format("woff2");
+      font-weight: 600; font-style: normal; font-display: block;
+    }
+    @font-face {
+      font-family: "Geist";
+      src: url("/fonts/Geist-Bold.woff2") format("woff2");
+      font-weight: 700; font-style: normal; font-display: block;
+    }
+    @font-face {
+      font-family: "GeistMono";
+      src: url("/fonts/GeistMono-Regular.woff2") format("woff2");
+      font-weight: 400; font-style: normal; font-display: block;
+    }
+    @font-face {
+      font-family: "GeistMono";
+      src: url("/fonts/GeistMono-Medium.woff2") format("woff2");
+      font-weight: 500; font-style: normal; font-display: block;
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────
+       shadcn/ui design tokens — dark theme (oklch)
+    ───────────────────────────────────────────────────────────────────── */
+    :root {
+      --bg:              #09090b;
+      --surface:         #18181b;
+      --surface-2:       #27272a;
+      --border:          rgba(255,255,255,0.08);
+      --border-strong:   rgba(255,255,255,0.14);
+      --fg:              #fafafa;
+      --fg-muted:        #a1a1aa;
+      --fg-subtle:       #52525b;
+      --blue:            #3b82f6;
+      --blue-bg:         rgba(59,130,246,0.12);
+      --blue-border:     rgba(59,130,246,0.28);
+      --green:           #22c55e;
+      --green-bg:        rgba(34,197,94,0.10);
+      --red:             #f87171;
+      --red-bg:          rgba(248,113,113,0.10);
+      --radius-sm:       6px;
+      --radius:          8px;
+      --radius-lg:       12px;
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────
+       Reset & base
+    ───────────────────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      width: 268px;
+      background: var(--bg);
+      color: var(--fg);
+      /* shadcn typography: Geist, tracked tight */
+      font-family: "Geist", "Inter", system-ui, sans-serif;
+      font-size: 13px;
+      line-height: 1.5;
+      font-feature-settings: "rlig" 1, "calt" 1;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────
+       shadcn typography scale
+    ───────────────────────────────────────────────────────────────────── */
+    .t-heading {
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: -0.025em;
+      color: var(--fg);
+      line-height: 1.2;
+    }
+    .t-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--fg);
+      line-height: 1.4;
+    }
+    .t-body {
+      font-size: 12px;
+      font-weight: 400;
+      color: var(--fg-muted);
+      line-height: 1.5;
+    }
+    .t-small {
+      font-size: 11px;
+      font-weight: 400;
+      color: var(--fg-subtle);
+      line-height: 1.4;
+    }
+    .t-mono {
+      font-family: "GeistMono", ui-monospace, monospace;
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.01em;
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────
+       Card wrapper
+    ───────────────────────────────────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────
+       Header
+    ───────────────────────────────────────────────────────────────────── */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 14px 10px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .header-icon {
+      width: 26px; height: 26px;
+      background: var(--surface-2);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+
+    /* Status badge */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      font-family: "GeistMono", ui-monospace, monospace;
+      border: 1px solid transparent;
+      transition: background 0.2s, color 0.2s, border-color 0.2s;
+    }
+    .badge.on  { background: var(--green-bg); color: var(--green); border-color: rgba(34,197,94,0.2); }
+    .badge.off { background: var(--red-bg);   color: var(--red);   border-color: rgba(248,113,113,0.2); }
+
+    .badge-dot {
+      width: 5px; height: 5px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────
+       Body sections
+    ───────────────────────────────────────────────────────────────────── */
+    .section {
+      padding: 12px 14px;
+    }
+    .section + .section {
+      border-top: 1px solid var(--border);
+    }
+
+    /* Toggle row */
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    /* shadcn Switch */
+    .switch { position: relative; width: 36px; height: 20px; flex-shrink: 0; cursor: pointer; }
+    .switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+    .switch-track {
+      position: absolute; inset: 0;
+      background: var(--surface-2);
+      border: 1px solid var(--border-strong);
+      border-radius: 9999px;
+      transition: background 0.2s, border-color 0.2s;
+    }
+    .switch-thumb {
+      position: absolute;
+      width: 14px; height: 14px;
+      top: 2px; left: 2px;
+      background: var(--fg-muted);
+      border-radius: 50%;
+      transition: transform 0.2s cubic-bezier(0.34,1.56,0.64,1), background 0.2s;
+    }
+    .switch input:checked ~ .switch-track { background: var(--blue); border-color: var(--blue); }
+    .switch input:checked ~ .switch-thumb { transform: translateX(16px); background: #fff; }
+
+    /* Speed */
+    .speed-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .speed-badge {
+      background: var(--blue-bg);
+      color: var(--blue);
+      border: 1px solid var(--blue-border);
+      border-radius: var(--radius-sm);
+      padding: 1px 7px;
+    }
+
+    input[type=range] {
+      width: 100%;
+      height: 4px;
+      appearance: none;
+      -webkit-appearance: none;
+      background: var(--surface-2);
+      border-radius: 9999px;
+      cursor: pointer;
+      outline: none;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px; height: 14px;
+      background: #fff;
+      border: 2px solid var(--blue);
+      border-radius: 50%;
+      box-shadow: 0 0 0 3px var(--blue-bg);
+      transition: box-shadow 0.15s;
+    }
+    input[type=range]:hover::-webkit-slider-thumb {
+      box-shadow: 0 0 0 5px var(--blue-bg);
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────
+       Keyboard cluster
+    ───────────────────────────────────────────────────────────────────── */
+    .keymap {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 4px;
+      place-items: center;
+    }
+
+    .key {
+      width: 30px; height: 28px;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--surface-2);
+      border: 1px solid var(--border-strong);
+      border-bottom: 2px solid rgba(0,0,0,0.4);
+      border-radius: var(--radius-sm);
+      font-family: "GeistMono", ui-monospace, monospace;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--fg-muted);
+      user-select: none;
+      transition: all 0.15s ease;
+    }
+    .key.active {
+      background: var(--blue-bg);
+      border-color: var(--blue-border);
+      border-bottom-color: rgba(59,130,246,0.4);
+      color: var(--blue);
+    }
+    .key.empty { visibility: hidden; }
+
+    /* ─────────────────────────────────────────────────────────────────────
+       Footer
+    ───────────────────────────────────────────────────────────────────── */
+    .footer {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      padding: 9px 14px;
+      border-top: 1px solid var(--border);
+      background: var(--bg);
+    }
+
+    kbd {
+      font-family: "GeistMono", ui-monospace, monospace;
+      font-size: 10px;
+      font-weight: 500;
+      background: var(--surface-2);
+      border: 1px solid var(--border-strong);
+      border-bottom: 2px solid rgba(0,0,0,0.35);
+      border-radius: 4px;
+      padding: 1px 5px;
+      color: var(--fg-muted);
+    }
+
+    /* outer padding */
+    .popup { padding: 10px; background: var(--bg); }
+  </style>
+</head>
+<body>
+<div class="popup">
+  <div class="card">
+
+    <!-- Header -->
+    <div class="header">
+      <div class="header-left">
+        <div class="header-icon">🎮</div>
+        <span class="t-heading">WASD Scroller</span>
+      </div>
+      <div class="badge on" id="statusBadge">
+        <span class="badge-dot" id="badgeDot"></span>
+        <span id="statusText">on</span>
+      </div>
+    </div>
+
+    <!-- Toggle -->
+    <div class="section">
+      <div class="row">
+        <div>
+          <div class="t-label">Scroll with WASD</div>
+          <div class="t-body" style="margin-top:1px">Moves the page when typing keys</div>
+        </div>
+        <label class="switch" aria-label="Toggle WASD scroll">
+          <input type="checkbox" id="toggle" checked />
+          <span class="switch-track"></span>
+          <span class="switch-thumb"></span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Speed -->
+    <div class="section">
+      <div class="speed-header">
+        <span class="t-label">Speed</span>
+        <span class="t-mono speed-badge" id="speedVal">8 px/f</span>
+      </div>
+      <input type="range" id="speed" min="2" max="30" value="8" step="1" aria-label="Scroll speed" />
+      <div class="row" style="margin-top:6px">
+        <span class="t-small">Slow</span>
+        <span class="t-small">Fast</span>
+      </div>
+    </div>
+
+    <!-- Key cluster -->
+    <div class="section">
+      <div class="t-small" style="margin-bottom:8px;text-transform:uppercase;letter-spacing:0.06em">Key layout</div>
+      <div class="keymap">
+        <div class="key empty"></div>
+        <div class="key active" id="kW">W</div>
+        <div class="key empty"></div>
+        <div class="key active" id="kA">A</div>
+        <div class="key active" id="kS">S</div>
+        <div class="key active" id="kD">D</div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <span class="t-small">Toggle anywhere with</span>
+      <kbd>Alt</kbd>
+      <span class="t-small">+</span>
+      <kbd>S</kbd>
+    </div>
+
+  </div><!-- /card -->
+</div><!-- /popup -->
+
+<script type="module" src="./main.js"></script>
+</body>
+</html>
