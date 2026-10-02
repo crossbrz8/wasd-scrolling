@@ -77,7 +77,189 @@ export default defineContentScript({
       }
     }
 
+    // ── Short-form / inner-scroll handling ────────────────────────────────
+    // Why Instagram/TikTok didn't scroll: they lock <body> and scroll an
+    // inner <div> (feed / reels viewer with scroll-snap). window.scrollBy()
+    // is a no-op there, so we must scroll the inner container instead.
+    // On vertical video feeds, W/S snap to prev/next video instead of
+    // smooth pixel scrolling.
+    function isShortFormRoute() {
+      const host = location.hostname.toLowerCase();
+      const p = location.pathname.toLowerCase();
+
+      // TikTok: For You / Following / @user/video/... are all vertical feeds.
+      // Exclude search/settings/inbox where pixel scroll is more useful.
+      if (host.includes('tiktok.com')) {
+        if (/^\/(search|settings|messages|inbox|upload)/.test(p)) return false;
+        return true;
+      }
+      // YouTube Shorts
+      if (host.includes('youtube.com') || host.includes('youtu.be')) {
+        return p.includes('/shorts');
+      }
+      // Instagram + Facebook reels
+      if (p.includes('/reel')) return true;
+      // Generic: shorts / spotlight routes on any site
+      if (p.includes('/shorts') || p.includes('/spotlight')) return true;
+      return false;
+    }
+
+    // Auto-detect reels-like pages on any site: >=2 large videos stacked
+    // vertically (covers embedded feeds, new routes, other platforms).
+    function looksLikeShortFormFeed() {
+      try {
+        const vids = [...document.querySelectorAll('video')].filter((v) => {
+          const r = v.getBoundingClientRect();
+          return r.height > 300 && r.width > 150 && r.bottom > 0 && r.top < innerHeight;
+        });
+        if (vids.length < 2) return false;
+        const tops = vids
+          .map((v) => v.getBoundingClientRect().top)
+          .sort((a, b) => a - b);
+        // Vertically stacked = tops spread over more than one viewport
+        return tops[tops.length - 1] - tops[0] > innerHeight * 0.8;
+      } catch {
+        return false;
+      }
+    }
+
+    function isSnapNavActive() {
+      if (isShortFormRoute()) return true;
+      return looksLikeShortFormFeed();
+    }
+
+    function isVisible(el) {
+      const r = el.getBoundingClientRect();
+      return r.height > 200 && r.width > 100 && r.bottom > 0 && r.top < innerHeight;
+    }
+
+    // Find the scrollable element under the viewport center.
+    function findScrollTarget() {
+      const cx = innerWidth / 2;
+      const cy = innerHeight / 2;
+      let el = null;
+      try {
+        el = document.elementFromPoint(cx, cy);
+      } catch { el = null; }
+      let cur = el;
+      while (cur && cur !== document.body && cur !== document.documentElement) {
+        let oy = '';
+        try { oy = getComputedStyle(cur).overflowY; } catch { oy = ''; }
+        if (
+          (oy === 'auto' || oy === 'scroll' || oy === 'overlay' || cur.scrollHeight > cur.clientHeight + 10) &&
+          cur.scrollHeight > cur.clientHeight + 10 &&
+          cur.clientHeight > 100
+        ) {
+          return cur;
+        }
+        cur = cur.parentElement;
+      }
+      // Fallback: largest plausible scroll container on the page
+      let best = null;
+      let bestArea = 0;
+      for (const cand of document.querySelectorAll('main div, main, div')) {
+        try {
+          if (cand.scrollHeight <= cand.clientHeight + 50 || cand.clientHeight < 200) continue;
+          const r = cand.getBoundingClientRect();
+          if (r.top > innerHeight / 2 || r.bottom < innerHeight / 2) continue;
+          const area = cand.clientWidth * cand.clientHeight;
+          if (area > bestArea) { bestArea = area; best = cand; }
+        } catch { /* ignore */ }
+      }
+      return best || document.scrollingElement || document.documentElement;
+    }
+
+    // Reels / Shorts / TikTok: snap to next/previous video instead of smooth pixel scrolling.
+    let lastReelStep = 0;
+    function getReelItem(video, target) {
+      // Prefer semantic wrappers first (stable across obfuscated class names)
+      try {
+        const semantic = video.closest(
+          'article, section, li, ytd-reel-video-renderer, ytd-shorts, [data-e2e="recommend-list-item-container"]'
+        );
+        if (semantic && semantic !== document.body && target.contains(semantic)) {
+          const r = semantic.getBoundingClientRect();
+          if (r.height > 200) return semantic;
+        }
+      } catch { /* ignore */ }
+      // Fallback: walk up until we own a viewport-sized block
+      let cur = video;
+      for (let i = 0; i < 7 && cur && cur.parentElement && cur.parentElement !== target; i++) {
+        cur = cur.parentElement;
+        try {
+          const r = cur.getBoundingClientRect();
+          if (r.height > innerHeight * 0.5 && r.height > 200) return cur;
+        } catch { break; }
+      }
+      return cur || video;
+    }
+    function tryNativeShortsButton(dir) {
+      // YouTube Shorts has stable nav buttons — clicking is more reliable
+      // than scrolling because YT intercepts scroll to drive its player.
+      try {
+        const host = location.hostname.toLowerCase();
+        if (host.includes('youtube.com') || host.includes('youtu.be')) {
+          const sel = dir > 0
+            ? '#navigation-button-down button, ytd-shorts [aria-label="Next"]'
+            : '#navigation-button-up button, ytd-shorts [aria-label="Previous"]';
+          const btn = document.querySelector(sel);
+          if (btn) { btn.click(); return true; }
+        }
+      } catch { /* fall through to scroll-based nav */ }
+      return false;
+    }
+    function stepReel(dir) {
+      const now = performance.now();
+      if (now - lastReelStep < 350) return; // debounce held key
+      lastReelStep = now;
+
+      if (tryNativeShortsButton(dir)) return;
+
+      const target = findScrollTarget();
+      if (!target) return;
+
+      // Collect reel candidates: videos (most reliable — class names change)
+      const scope = target;
+      let reels = [...scope.querySelectorAll('video')].filter(isVisible);
+      if (reels.length < 2) {
+        // Videos may live outside the scroll container (overlay layouts)
+        reels = [...document.querySelectorAll('video')].filter(isVisible);
+      }
+      // Map videos -> their snap item wrapper
+      let items = reels.map((v) => getReelItem(v, target));
+      // Dedupe + sort top-to-bottom
+      items = [...new Set(items)].sort(
+        (a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top
+      );
+
+      if (items.length >= 2) {
+        const centerY = innerHeight / 2;
+        let current = 0;
+        let bestDist = Infinity;
+        items.forEach((el, i) => {
+          const r = el.getBoundingClientRect();
+          const d = Math.abs(r.top + r.height / 2 - centerY);
+          if (d < bestDist) { bestDist = d; current = i; }
+        });
+        const next = Math.min(items.length - 1, Math.max(0, current + dir));
+        if (next !== current) {
+          items[next].scrollIntoView({ behavior: 'instant', block: 'center' });
+          // Nudge the container too (some layouts listen on container scroll)
+          try { target.dispatchEvent(new Event('scroll', { bubbles: true })); } catch {}
+          return;
+        }
+      }
+      // Fallback: page by one viewport height (standard reels UX)
+      try {
+        target.scrollBy({ top: dir * (target.clientHeight || innerHeight) * 0.95, behavior: 'instant' });
+      } catch {
+        target.scrollTop += dir * (target.clientHeight || innerHeight);
+      }
+    }
+
     // ── Toggle shortcut: Alt + S ──────────────────────────────────────────
+    let scrollTarget = null;
+
     document.addEventListener('keydown', (e) => {
       // Alt + S → toggle the extension
       if (e.altKey && e.key.toLowerCase() === 's') {
@@ -100,6 +282,20 @@ export default defineContentScript({
 
       // Prevent default browser behavior for WASD only when extension is active
       e.preventDefault();
+      // Keep Instagram's own handlers from also acting on the key
+      try { e.stopPropagation(); } catch {}
+      if (typeof e.stopImmediatePropagation === 'function') {
+        try { e.stopImmediatePropagation(); } catch {}
+      }
+
+      // On short-form video pages, W/S snap to prev/next video instead of pixel scroll
+      if ((dir === 'w' || dir === 's') && !e.altKey && !e.ctrlKey && !e.metaKey && isSnapNavActive()) {
+        keys.w = keys.s = false;
+        if (!keys.a && !keys.d) stopScroll();
+        stepReel(dir === 's' ? 1 : -1);
+        return;
+      }
+
       keys[dir] = true;
       startScroll();
     }, { capture: true });
@@ -118,6 +314,7 @@ export default defineContentScript({
 
     function startScroll() {
       if (animFrame !== null) return; // already running
+      scrollTarget = findScrollTarget();
       tick();
     }
 
@@ -147,7 +344,31 @@ export default defineContentScript({
       }
 
       if (dx !== 0 || dy !== 0) {
-        window.scrollBy({ left: dx, top: dy, behavior: 'instant' });
+        const root = document.scrollingElement || document.documentElement;
+        let t = scrollTarget;
+        if (!t || !document.contains(t)) {
+          t = scrollTarget = findScrollTarget();
+        }
+        const isRoot = !t || t === root || t === document.body || t === document.documentElement;
+        if (isRoot) {
+          window.scrollBy({ left: dx, top: dy, behavior: 'instant' });
+        } else {
+          // Inner container first (Instagram, modals, sidebars…).
+          const beforeTop = t.scrollTop;
+          const beforeLeft = t.scrollLeft;
+          try {
+            t.scrollBy({ left: dx, top: dy, behavior: 'instant' });
+          } catch {
+            t.scrollLeft += dx;
+            t.scrollTop += dy;
+          }
+          // If the inner container is at its edge and couldn't consume
+          // the scroll, let the outer page take over (avoids double-speed
+          // when both could scroll).
+          if (t.scrollTop === beforeTop && t.scrollLeft === beforeLeft) {
+            window.scrollBy({ left: dx, top: dy, behavior: 'instant' });
+          }
+        }
       }
 
       if (anyKeyActive() && enabled) {

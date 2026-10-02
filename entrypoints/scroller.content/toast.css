@@ -27,9 +27,21 @@
     0 10px 24px -4px rgba(0,0,0,0.5),
     inset 0 1px 0 rgba(255,255,255,0.05);
 
-  /* Typography */
+  /* Typography — per better-typography + baseline-ui:
+     - title (heading-like): text-wrap: balance, tight leading
+     - sub (body-like): text-wrap: pretty, relaxed leading, break long words
+     - no custom letter-spacing (baseline-ui MUST)
+     - unitless line-heights so they scale with font size
+     - smoothing applied locally: this is a content-script injected into
+       arbitrary pages, so we can't rely on the host root having it */
   font-family: "Geist", "Inter", system-ui, sans-serif;
   color: #fafafa;
+  font-kerning: normal;
+  font-optical-sizing: auto;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
   font-feature-settings: "rlig" 1, "calt" 1;
 
   /* Interaction */
@@ -67,24 +79,29 @@
 
 .toast-content {
   flex: 1;
+  min-width: 0; /* allow ellipsis/clamp inside flex */
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
   /* Prevent text selection while dragging */
   pointer-events: none;
 }
 
 .toast-title {
   font-size: 14px;
-  font-weight: 600;
-  letter-spacing: -0.015em;
-  line-height: 1.2;
+  font-weight: 500;
+  line-height: 1.35;
+  text-wrap: balance;
+  overflow-wrap: break-word;
 }
 
 .toast-sub {
   font-size: 13px;
+  font-weight: 400;
   color: #a1a1aa;
-  line-height: 1.4;
+  line-height: 1.5;
+  text-wrap: pretty;
+  overflow-wrap: break-word;
 }
 
 .toast-close {
