@@ -4,6 +4,7 @@ import {
   MESSAGE_TYPES,
   clampSpeed,
   isShortFormRoute,
+  isStoriesRoute,
   keyToDir,
   shouldHandleMessage,
 } from './scroll-logic.js';
@@ -58,6 +59,26 @@ describe('isShortFormRoute', () => {
   it('is case-insensitive', () => {
     expect(isShortFormRoute('WWW.TIKTOK.COM', '/FORYOU')).toBe(true);
     expect(isShortFormRoute('WWW.YOUTUBE.COM', '/SHORTS/ABC')).toBe(true);
+  });
+});
+
+describe('isStoriesRoute', () => {
+  it.each([
+    ['www.instagram.com', '/stories/user/123', true],
+    ['www.instagram.com', '/stories/', true],
+    ['www.facebook.com', '/stories/123', true],
+    ['www.instagram.com', '/', false],
+    ['www.instagram.com', '/reels/', false],
+    ['www.instagram.com', '/reel/abc/', false],
+    ['www.facebook.com', '/', false],
+    ['www.tiktok.com', '/@user', false],
+    ['example.com', '/stories/abc', false],
+  ])('%s%s -> %s', (host, path, expected) => {
+    expect(isStoriesRoute(host, path)).toBe(expected);
+  });
+
+  it('is case-insensitive', () => {
+    expect(isStoriesRoute('WWW.INSTAGRAM.COM', '/STORIES/USER')).toBe(true);
   });
 });
 

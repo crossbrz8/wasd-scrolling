@@ -67,3 +67,15 @@ export function shouldHandleMessage(msg, sender, runtimeId) {
   }
   return true;
 }
+
+// Stories viewer detection (Instagram / Facebook). Same no-arg convention
+// as isShortFormRoute: live page URL by default, explicit values in tests.
+export function isStoriesRoute(
+  hostname = typeof location !== 'undefined' ? location.hostname : '',
+  pathname = typeof location !== 'undefined' ? location.pathname : '',
+) {
+  const host = String(hostname).toLowerCase();
+  const p = String(pathname).toLowerCase();
+  if (!host.includes('instagram.com') && !host.includes('facebook.com')) return false;
+  return p.includes('/stories');
+}

@@ -4,6 +4,7 @@ import {
   DEFAULT_SPEED,
   clampSpeed,
   isShortFormRoute,
+  isStoriesRoute,
   keyToDir,
   shouldHandleMessage,
 } from '../../utils/scroll-logic.js';
@@ -263,6 +264,52 @@ export default defineContentScript({
       }
     }
 
+    // Stories (Instagram/Facebook viewer): A/D step to prev/next story.
+    let lastStoryStep = 0;
+    function stepStory(dir) {
+      const now = performance.now();
+      if (now - lastStoryStep < 350) return; // debounce held key
+      lastStoryStep = now;
+
+      // 1. Click the viewer's own prev/next chevron (drives the site's
+      //    player instead of fighting it). Matched by exact accessible name
+      //    + screen half so unrelated carousels can't be hit.
+      try {
+        const wantNext = dir > 0;
+        const btns = [...document.querySelectorAll('button')].filter((b) => {
+          const label = (b.getAttribute('aria-label') || '').trim().toLowerCase();
+          if (wantNext ? label !== 'next' : label !== 'previous') return false;
+          const r = b.getBoundingClientRect();
+          if (r.width < 20 || r.height < 20 || r.bottom <= 0 || r.top >= innerHeight) return false;
+          const cx = r.left + r.width / 2;
+          return wantNext ? cx > innerWidth / 2 : cx < innerWidth / 2;
+        });
+        if (btns.length > 0) {
+          btns.sort((a, b) => {
+            const ax = a.getBoundingClientRect().left;
+            const bx = b.getBoundingClientRect().left;
+            return wantNext ? bx - ax : ax - bx;
+          });
+          btns[0].click();
+          return;
+        }
+      } catch { /* fall through to arrow-key fallback */ }
+
+      // 2. Stories viewers respond to arrow keys natively.
+      try {
+        for (const type of ['keydown', 'keyup']) {
+          document.dispatchEvent(
+            new KeyboardEvent(type, {
+              key: dir > 0 ? 'ArrowRight' : 'ArrowLeft',
+              code: dir > 0 ? 'ArrowRight' : 'ArrowLeft',
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+        }
+      } catch { /* nothing else to try */ }
+    }
+
     // ── Toggle shortcut: Alt + S ──────────────────────────────────────────
     let scrollTarget = null;
     let scrollTargetUrl = '';
@@ -288,6 +335,25 @@ export default defineContentScript({
 
       const dir = keyToDir(e.key);
       if (!dir) return;
+
+      // In story viewers, A/D step to prev/next story instead of scrolling
+      const isStoryKey =
+        (dir === 'a' || dir === 'd') &&
+        !e.altKey && !e.ctrlKey && !e.metaKey &&
+        isStoriesRoute();
+
+      if (isStoryKey) {
+        // Same hijack treatment as snap keys: block page handlers.
+        e.preventDefault();
+        try { e.stopPropagation(); } catch {}
+        if (typeof e.stopImmediatePropagation === 'function') {
+          try { e.stopImmediatePropagation(); } catch {}
+        }
+        keys.a = keys.d = false;
+        if (!keys.w && !keys.s) stopScroll();
+        stepStory(dir === 'd' ? 1 : -1);
+        return;
+      }
 
       // On short-form video pages, W/S snap to prev/next video instead of pixel scroll
       const isSnapKey =
