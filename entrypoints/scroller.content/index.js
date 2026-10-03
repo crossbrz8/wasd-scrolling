@@ -1,5 +1,12 @@
 import './toast.css';
 import { browser } from 'wxt/browser';
+import {
+  DEFAULT_SPEED,
+  clampSpeed,
+  isShortFormRoute,
+  keyToDir,
+  shouldHandleMessage,
+} from '../../utils/scroll-logic.js';
 
 // WASD Page Scroller - Content Script (WXT)
 // Toggle with Alt+S | Scroll speed adjustable via popup
@@ -14,7 +21,7 @@ export default defineContentScript({
 
     // Default settings
     let enabled = true;
-    let speed = 8; // pixels per frame
+    let speed = DEFAULT_SPEED; // pixels per frame
 
     // Active keys being held down
     const keys = { w: false, a: false, s: false, d: false };
@@ -27,7 +34,7 @@ export default defineContentScript({
       try {
         const data = await browser.storage.local.get([STORAGE_KEY, SPEED_KEY]);
         if (data[STORAGE_KEY] !== undefined) enabled = data[STORAGE_KEY] === true;
-        if (data[SPEED_KEY] !== undefined) speed = parseFloat(data[SPEED_KEY]) || 8;
+        if (data[SPEED_KEY] !== undefined) speed = clampSpeed(data[SPEED_KEY]) ?? DEFAULT_SPEED;
       } catch {
         // storage unavailable (e.g. context invalidated) — keep defaults
       }
@@ -38,16 +45,22 @@ export default defineContentScript({
     }
 
     // ── Listen for messages from the popup ────────────────────────────────
-    browser.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    // Sender + shape validated per extension-analyze security checklist:
+    // content scripts run in hostile pages, so treat every message as untrusted.
+    browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+      if (!shouldHandleMessage(msg, sender, browser.runtime.id)) return false;
       if (msg.type === 'GET_STATE') {
         sendResponse({ enabled, speed });
       } else if (msg.type === 'SET_ENABLED') {
+        if (typeof msg.value !== 'boolean') return false;
         enabled = msg.value;
         saveSettings();
         if (!enabled) stopScroll();
         sendResponse({ ok: true });
       } else if (msg.type === 'SET_SPEED') {
-        speed = msg.value;
+        const v = clampSpeed(msg.value);
+        if (v === null) return false;
+        speed = v;
         saveSettings();
         sendResponse({ ok: true });
       }
@@ -55,10 +68,11 @@ export default defineContentScript({
     });
 
     // ── Key event helpers ─────────────────────────────────────────────────
+    // (keyToDir lives in utils/scroll-logic.js so it can be unit-tested)
     function isInputFocused() {
       const el = document.activeElement;
       if (!el) return false;
-      const tag = el.tagName.toLowerCase();
+      const tag = typeof el.tagName === 'string' ? el.tagName.toLowerCase() : '';
       return (
         tag === 'input' ||
         tag === 'textarea' ||
@@ -67,42 +81,14 @@ export default defineContentScript({
       );
     }
 
-    function keyToDir(key) {
-      switch (key.toLowerCase()) {
-        case 'w': return 'w';
-        case 'a': return 'a';
-        case 's': return 's';
-        case 'd': return 'd';
-        default: return null;
-      }
-    }
-
     // ── Short-form / inner-scroll handling ────────────────────────────────
     // Why Instagram/TikTok didn't scroll: they lock <body> and scroll an
     // inner <div> (feed / reels viewer with scroll-snap). window.scrollBy()
     // is a no-op there, so we must scroll the inner container instead.
     // On vertical video feeds, W/S snap to prev/next video instead of
     // smooth pixel scrolling.
-    function isShortFormRoute() {
-      const host = location.hostname.toLowerCase();
-      const p = location.pathname.toLowerCase();
-
-      // TikTok: For You / Following / @user/video/... are all vertical feeds.
-      // Exclude search/settings/inbox where pixel scroll is more useful.
-      if (host.includes('tiktok.com')) {
-        if (/^\/(search|settings|messages|inbox|upload)/.test(p)) return false;
-        return true;
-      }
-      // YouTube Shorts
-      if (host.includes('youtube.com') || host.includes('youtu.be')) {
-        return p.includes('/shorts');
-      }
-      // Instagram + Facebook reels
-      if (p.includes('/reel')) return true;
-      // Generic: shorts / spotlight routes on any site
-      if (p.includes('/shorts') || p.includes('/spotlight')) return true;
-      return false;
-    }
+    // (isShortFormRoute lives in utils/scroll-logic.js so it can be unit-tested;
+    // called with no args it reads the live page URL.)
 
     // Auto-detect reels-like pages on any site: >=2 large videos stacked
     // vertically (covers embedded feeds, new routes, other platforms).
@@ -123,9 +109,25 @@ export default defineContentScript({
       }
     }
 
+    // Cached: route check is string ops, but the heuristic below scans every
+    // <video> on the page — far too heavy to run on each keypress.
+    // Route result is cached per URL; heuristic result gets a short TTL so
+    // newly loaded feeds are picked up without rescanning per keystroke.
+    let snapCache = { url: '', route: null, heuristic: null, heuristicAt: 0 };
+    const SNAP_HEURISTIC_TTL_MS = 2000;
     function isSnapNavActive() {
-      if (isShortFormRoute()) return true;
-      return looksLikeShortFormFeed();
+      const url = location.href;
+      if (snapCache.url !== url) {
+        snapCache = { url, route: null, heuristic: null, heuristicAt: 0 };
+      }
+      if (snapCache.route === null) snapCache.route = isShortFormRoute();
+      if (snapCache.route) return true;
+      const now = performance.now();
+      if (snapCache.heuristic === null || now - snapCache.heuristicAt > SNAP_HEURISTIC_TTL_MS) {
+        snapCache.heuristic = looksLikeShortFormFeed();
+        snapCache.heuristicAt = now;
+      }
+      return snapCache.heuristic;
     }
 
     function isVisible(el) {
@@ -142,18 +144,22 @@ export default defineContentScript({
         el = document.elementFromPoint(cx, cy);
       } catch { el = null; }
       let cur = el;
-      while (cur && cur !== document.body && cur !== document.documentElement) {
-        let oy = '';
-        try { oy = getComputedStyle(cur).overflowY; } catch { oy = ''; }
-        if (
-          (oy === 'auto' || oy === 'scroll' || oy === 'overlay' || cur.scrollHeight > cur.clientHeight + 10) &&
-          cur.scrollHeight > cur.clientHeight + 10 &&
-          cur.clientHeight > 100
-        ) {
-          return cur;
+      let depth = 0;
+      let overflowFallback = null;
+      while (cur && cur !== document.body && cur !== document.documentElement && depth < 15) {
+        depth++;
+        // Cheap layout check first; getComputedStyle only for real candidates.
+        if (cur.scrollHeight > cur.clientHeight + 10 && cur.clientHeight > 100) {
+          if (!overflowFallback) overflowFallback = cur;
+          let oy = '';
+          try { oy = getComputedStyle(cur).overflowY; } catch { oy = ''; }
+          if (oy === 'auto' || oy === 'scroll' || oy === 'overlay') return cur;
         }
         cur = cur.parentElement;
       }
+      // No explicit scroll container found — an ancestor with overflowing
+      // content may still take scroll (old behavior), prefer it over <body>.
+      if (overflowFallback) return overflowFallback;
       // Fallback: largest plausible scroll container on the page
       let best = null;
       let bestArea = 0;
@@ -259,10 +265,13 @@ export default defineContentScript({
 
     // ── Toggle shortcut: Alt + S ──────────────────────────────────────────
     let scrollTarget = null;
+    let scrollTargetUrl = '';
 
     document.addEventListener('keydown', (e) => {
-      // Alt + S → toggle the extension
-      if (e.altKey && e.key.toLowerCase() === 's') {
+      // Alt + S → toggle the extension (guarded: synthetic events may
+      // carry no `key` string at all)
+      const rawKey = typeof e.key === 'string' ? e.key : '';
+      if (e.altKey && rawKey.toLowerCase() === 's') {
         enabled = !enabled;
         saveSettings();
         if (enabled) {
@@ -280,22 +289,29 @@ export default defineContentScript({
       const dir = keyToDir(e.key);
       if (!dir) return;
 
-      // Prevent default browser behavior for WASD only when extension is active
-      e.preventDefault();
-      // Keep Instagram's own handlers from also acting on the key
-      try { e.stopPropagation(); } catch {}
-      if (typeof e.stopImmediatePropagation === 'function') {
-        try { e.stopImmediatePropagation(); } catch {}
-      }
-
       // On short-form video pages, W/S snap to prev/next video instead of pixel scroll
-      if ((dir === 'w' || dir === 's') && !e.altKey && !e.ctrlKey && !e.metaKey && isSnapNavActive()) {
+      const isSnapKey =
+        (dir === 'w' || dir === 's') &&
+        !e.altKey && !e.ctrlKey && !e.metaKey &&
+        isSnapNavActive();
+
+      if (isSnapKey) {
+        // We hijack a key the page may also handle: block page handlers
+        // and the default action.
+        e.preventDefault();
+        try { e.stopPropagation(); } catch {}
+        if (typeof e.stopImmediatePropagation === 'function') {
+          try { e.stopImmediatePropagation(); } catch {}
+        }
         keys.w = keys.s = false;
         if (!keys.a && !keys.d) stopScroll();
         stepReel(dir === 's' ? 1 : -1);
         return;
       }
 
+      // Smooth scroll: prevent the default action only — the page and other
+      // extensions still see the event.
+      e.preventDefault();
       keys[dir] = true;
       startScroll();
     }, { capture: true });
@@ -315,6 +331,7 @@ export default defineContentScript({
     function startScroll() {
       if (animFrame !== null) return; // already running
       scrollTarget = findScrollTarget();
+      scrollTargetUrl = location.href;
       tick();
     }
 
@@ -346,8 +363,11 @@ export default defineContentScript({
       if (dx !== 0 || dy !== 0) {
         const root = document.scrollingElement || document.documentElement;
         let t = scrollTarget;
-        if (!t || !document.contains(t)) {
+        // Re-resolve when the target is gone OR the SPA navigated
+        // (Instagram/TikTok/YouTube swap content without a reload).
+        if (!t || !document.contains(t) || scrollTargetUrl !== location.href) {
           t = scrollTarget = findScrollTarget();
+          scrollTargetUrl = location.href;
         }
         const isRoot = !t || t === root || t === document.body || t === document.documentElement;
         if (isRoot) {
@@ -384,29 +404,61 @@ export default defineContentScript({
     function showToast(title, sub, variant) {
       if (currentToast) currentToast.dismiss(true);
 
+      const SVG_NS = 'http://www.w3.org/2000/svg';
+      function makeIcon(size, stroke, pathDs) {
+        const svg = document.createElementNS(SVG_NS, 'svg');
+        svg.setAttribute('width', String(size));
+        svg.setAttribute('height', String(size));
+        svg.setAttribute('viewBox', '0 0 24 24');
+        svg.setAttribute('fill', 'none');
+        svg.setAttribute('stroke', stroke);
+        svg.setAttribute('stroke-width', '2');
+        svg.setAttribute('stroke-linecap', 'round');
+        svg.setAttribute('stroke-linejoin', 'round');
+        svg.setAttribute('class', 'toast-icon-svg');
+        svg.setAttribute('aria-hidden', 'true');
+        for (const d of pathDs) {
+          const p = document.createElementNS(SVG_NS, 'path');
+          p.setAttribute('d', d);
+          p.setAttribute('class', 'toast-draw');
+          svg.appendChild(p);
+        }
+        return svg;
+      }
+
+      const safeVariant = variant === 'on' ? 'on' : 'off';
       const toast = document.createElement('div');
-      toast.className = `uiarc-toast uiarc-toast--${variant}`;
+      toast.className = `uiarc-toast uiarc-toast--${safeVariant}`;
 
       // Accessibility (matching UIArc spec)
       toast.setAttribute('role', 'status');
       toast.setAttribute('aria-live', 'polite');
       toast.setAttribute('aria-atomic', 'true');
 
-      // Lucide icons with draw animation
-      // Checkmark for ON, X for OFF
-      const iconOn = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="toast-icon-svg" aria-hidden="true"><path class="toast-draw" d="M20 6 9 17l-5-5"/></svg>`;
-      const iconOff = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="toast-icon-svg" aria-hidden="true"><path class="toast-draw" d="M18 6 6 18M6 6l12 12"/></svg>`;
+      const iconWrap = document.createElement('div');
+      iconWrap.className = 'toast-icon';
+      iconWrap.appendChild(
+        safeVariant === 'on'
+          ? makeIcon(20, '#34d399', ['M20 6 9 17l-5-5'])
+          : makeIcon(20, '#71717a', ['M18 6 6 18M6 6l12 12'])
+      );
 
-      toast.innerHTML = `
-        <div class="toast-icon">${variant === 'on' ? iconOn : iconOff}</div>
-        <div class="toast-content">
-          <div class="toast-title">${title}</div>
-          <div class="toast-sub">${sub}</div>
-        </div>
-        <button class="toast-close" aria-label="Dismiss notification">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-        </button>
-      `;
+      const content = document.createElement('div');
+      content.className = 'toast-content';
+      const titleEl = document.createElement('div');
+      titleEl.className = 'toast-title';
+      titleEl.textContent = String(title);
+      const subEl = document.createElement('div');
+      subEl.className = 'toast-sub';
+      subEl.textContent = String(sub);
+      content.append(titleEl, subEl);
+
+      const closeBtn = document.createElement('button');
+      closeBtn.className = 'toast-close';
+      closeBtn.setAttribute('aria-label', 'Dismiss notification');
+      closeBtn.appendChild(makeIcon(16, 'currentColor', ['M18 6 6 18', 'm6 6 12 12']));
+
+      toast.append(iconWrap, content, closeBtn);
 
       document.body.appendChild(toast);
 
@@ -419,7 +471,13 @@ export default defineContentScript({
         isDragging = true;
         startX = e.clientX;
         toast.style.transition = 'none';
-        e.target.setPointerCapture(e.pointerId);
+        try {
+          if (e.target && typeof e.target.setPointerCapture === 'function') {
+            e.target.setPointerCapture(e.pointerId);
+          }
+        } catch {
+          // pointer already released / target detached — drag still works via move/up
+        }
       }
 
       function onPointerMove(e) {
@@ -464,11 +522,36 @@ export default defineContentScript({
         if (currentToast?.el === toast) currentToast = null;
       }
 
-      toast.querySelector('.toast-close').onclick = () => dismiss();
+      closeBtn.addEventListener('click', () => dismiss());
       currentToast = { el: toast, dismiss };
     }
 
     // ── Init ──────────────────────────────────────────────────────────────
+    // SPA navigation swaps content without a reload — drop cached targets
+    // proactively so the next keypress re-resolves them.
+    function handleNav() {
+      scrollTarget = null;
+      scrollTargetUrl = '';
+      snapCache = { url: '', route: null, heuristic: null, heuristicAt: 0 };
+    }
+    try {
+      const origPushState = history.pushState.bind(history);
+      const origReplaceState = history.replaceState.bind(history);
+      history.pushState = (...args) => {
+        const r = origPushState(...args);
+        handleNav();
+        return r;
+      };
+      history.replaceState = (...args) => {
+        const r = origReplaceState(...args);
+        handleNav();
+        return r;
+      };
+    } catch {
+      // history is non-configurable here — tick()'s URL check still catches navs
+    }
+    window.addEventListener('popstate', handleNav);
+    window.addEventListener('hashchange', handleNav);
     loadSettings();
   },
 });

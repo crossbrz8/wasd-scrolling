@@ -5,7 +5,7 @@ export default defineConfig({
   manifest: {
     name: 'WASD Page Scroller',
     description: 'Scroll web pages using WASD keys. Toggle on/off with Alt+S.',
-    permissions: ['storage', 'tabs'],
+    permissions: ['storage'],
     action: {},
     icons: {
       16: '/icon-16.png',

@@ -1,7 +1,7 @@
 /*
   toast.css (WXT content-script CSS, auto-bundled via `import './toast.css'`)
-  UIArc Toast Design (Vanilla JS port)
-  Uses Geist font (bundled in the extension)
+  Landing-page theme: zinc-950 card, white/10 border, emerald-400 accent,
+  Geist type, flat surfaces, border-based focus.
 */
 
 .uiarc-toast {
@@ -17,25 +17,18 @@
   width: calc(100% - 48px);
   max-width: 356px;
   padding: 14px;
-  border-radius: 12px;
+  border-radius: 16px;
 
-  /* shadcn dark surface */
-  background: #18181b;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  /* landing card on zinc-950 — solid so it reads over any page */
+  background: #09090b;
+  border: 1px solid rgba(255, 255, 255, 0.10);
   box-shadow:
     0 4px 6px -1px rgba(0,0,0,0.4),
-    0 10px 24px -4px rgba(0,0,0,0.5),
-    inset 0 1px 0 rgba(255,255,255,0.05);
+    0 10px 24px -4px rgba(0,0,0,0.5);
 
-  /* Typography — per better-typography + baseline-ui:
-     - title (heading-like): text-wrap: balance, tight leading
-     - sub (body-like): text-wrap: pretty, relaxed leading, break long words
-     - no custom letter-spacing (baseline-ui MUST)
-     - unitless line-heights so they scale with font size
-     - smoothing applied locally: this is a content-script injected into
-       arbitrary pages, so we can't rely on the host root having it */
+  /* Typography — landing: semibold title, muted sub, Geist */
   font-family: "Geist", "Inter", system-ui, sans-serif;
-  color: #fafafa;
+  color: #f4f4f5;
   font-kerning: normal;
   font-optical-sizing: auto;
   font-variant-numeric: tabular-nums;
@@ -69,12 +62,25 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-top: 2px;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.uiarc-toast--on .toast-icon {
+  background: rgba(52, 211, 153, 0.10);
+}
+
+.uiarc-toast--off .toast-icon {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.10);
 }
 
 .toast-icon-svg {
-  width: 20px;
-  height: 20px;
+  width: 17px;
+  height: 17px;
 }
 
 .toast-content {
@@ -89,8 +95,10 @@
 
 .toast-title {
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   line-height: 1.35;
+  color: #f4f4f5;
   text-wrap: balance;
   overflow-wrap: break-word;
 }
@@ -106,7 +114,7 @@
 
 .toast-close {
   background: transparent;
-  border: none;
+  border: 1px solid transparent;
   color: #71717a;
   cursor: pointer;
   padding: 4px;
@@ -115,13 +123,18 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: color 0.2s, background 0.2s;
+  transition: color 0.2s, background 0.2s, border-color 0.2s;
   flex-shrink: 0;
 }
 
 .toast-close:hover {
-  color: #fafafa;
-  background: rgba(255,255,255,0.1);
+  color: #f4f4f5;
+  background: rgba(255,255,255,0.06);
+}
+
+.toast-close:focus-visible {
+  outline: 2px solid #34d399;
+  outline-offset: 1px;
 }
 
 /* ── SVG Draw Animation ── */
@@ -155,5 +168,15 @@
 @media (max-width: 600px) {
   .uiarc-toast.toast-exit {
     transform: translate(50%, 8px) scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .uiarc-toast, .toast-draw {
+    animation: none;
+  }
+  .uiarc-toast.toast-exit {
+    transition: opacity 0.15s ease;
+    transform: none;
   }
 }

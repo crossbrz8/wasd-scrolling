@@ -10,9 +10,11 @@
     "build:firefox": "wxt build -b firefox",
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
+    "test": "vitest run",
     "postinstall": "wxt prepare"
   },
   "devDependencies": {
+    "vitest": "^3.2.7",
     "wxt": "^0.21.4"
   }
 }

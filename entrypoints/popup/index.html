@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>WASD Scroller</title>
   <style>
-    
+
     /* ─────────────────────────────────────────────────────────────────────
        Geist — bundled in public/fonts, MV3-safe (no CDN)
     ───────────────────────────────────────────────────────────────────── */
@@ -41,27 +41,33 @@
     }
 
     /* ─────────────────────────────────────────────────────────────────────
-       shadcn/ui design tokens — dark theme (oklch)
+       Landing-page theme tokens
+       bg zinc-950 #09090b · card white/[0.03] · borders white/10
+       text zinc-100 / zinc-400 / zinc-500 · accent emerald-400 #34d399
+       display emerald-300 #6ee7b7 · radii: pill / 16px card / 12px tile / 6px kbd
     ───────────────────────────────────────────────────────────────────── */
     :root {
       --bg:              #09090b;
-      --surface:         #18181b;
-      --surface-2:       #27272a;
-      --border:          rgba(255,255,255,0.08);
+      --card:            rgba(255,255,255,0.03);
+      --keycap:          #27272a;
+      --keycap-border:   #3f3f46;
+      --track:           #27272a;
+      --border:          rgba(255,255,255,0.10);
       --border-strong:   rgba(255,255,255,0.14);
-      --fg:              #fafafa;
+      --fg:              #f4f4f5;
       --fg-muted:        #a1a1aa;
-      --fg-subtle:       #52525b;
-      --blue:            #3b82f6;
-      --blue-bg:         rgba(59,130,246,0.12);
-      --blue-border:     rgba(59,130,246,0.28);
-      --green:           #22c55e;
-      --green-bg:        rgba(34,197,94,0.10);
-      --red:             #f87171;
-      --red-bg:          rgba(248,113,113,0.10);
-      --radius-sm:       6px;
-      --radius:          8px;
-      --radius-lg:       12px;
+      --fg-subtle:       #71717a;
+      --fg-faint:        #52525b;
+      --kbd-bg:          rgba(255,255,255,0.05);
+      --kbd-fg:          #e4e4e7;
+      --emerald:         #34d399;
+      --emerald-text:    #6ee7b7;
+      --emerald-deep:    #065f46;
+      --emerald-soft:    rgba(52,211,153,0.10);
+      --emerald-border:  rgba(52,211,153,0.28);
+      --radius-kbd:      6px;
+      --radius-tile:     12px;
+      --radius-card:     16px;
     }
 
     /* ─────────────────────────────────────────────────────────────────────
@@ -70,11 +76,10 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      width: 268px;
+      width: 280px;
       background: var(--bg);
       color: var(--fg);
-      /* shadcn typography: Geist, tracked tight */
-      font-family: "Geist", "Inter", system-ui, sans-serif;
+      font-family: "Geist", system-ui, sans-serif;
       font-size: 13px;
       line-height: 1.5;
       font-feature-settings: "rlig" 1, "calt" 1;
@@ -83,18 +88,26 @@
     }
 
     /* ─────────────────────────────────────────────────────────────────────
-       shadcn typography scale
+       Type scale (landing: semibold titles, muted body, mono eyebrows)
     ───────────────────────────────────────────────────────────────────── */
     .t-heading {
       font-size: 13px;
       font-weight: 600;
-      letter-spacing: -0.025em;
+      letter-spacing: -0.01em;
       color: var(--fg);
-      line-height: 1.2;
+      line-height: 1.25;
+    }
+    .t-sub {
+      font-family: "GeistMono", ui-monospace, monospace;
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.06em;
+      color: var(--fg-subtle);
+      line-height: 1.4;
     }
     .t-label {
-      font-size: 12px;
-      font-weight: 500;
+      font-size: 13px;
+      font-weight: 600;
       color: var(--fg);
       line-height: 1.4;
     }
@@ -104,10 +117,13 @@
       color: var(--fg-muted);
       line-height: 1.5;
     }
-    .t-small {
-      font-size: 11px;
-      font-weight: 400;
-      color: var(--fg-subtle);
+    .t-eyebrow {
+      font-family: "GeistMono", ui-monospace, monospace;
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--emerald-text);
       line-height: 1.4;
     }
     .t-mono {
@@ -115,78 +131,84 @@
       font-size: 11px;
       font-weight: 500;
       letter-spacing: 0.01em;
+      font-variant-numeric: tabular-nums;
     }
 
     /* ─────────────────────────────────────────────────────────────────────
-       Card wrapper
+       Card wrapper — landing download card: rounded-2xl, white/[0.03]
     ───────────────────────────────────────────────────────────────────── */
     .card {
-      background: var(--surface);
+      background: var(--card);
       border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
+      border-radius: var(--radius-card);
       overflow: hidden;
     }
 
     /* ─────────────────────────────────────────────────────────────────────
-       Header
+       Header — WasdMark tile (landing feature-tile style) + version pill
     ───────────────────────────────────────────────────────────────────── */
     .header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 12px 14px 10px;
+      gap: 8px;
+      padding: 12px 14px 11px;
       border-bottom: 1px solid var(--border);
     }
 
     .header-left {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 9px;
+      min-width: 0;
     }
 
     .header-icon {
-      width: 26px; height: 26px;
-      background: var(--surface-2);
-      border: 1px solid var(--border-strong);
-      border-radius: var(--radius-sm);
+      width: 30px; height: 30px;
+      background: var(--emerald-soft);
+      border-radius: 9px;
       display: flex; align-items: center; justify-content: center;
-      font-size: 13px;
       flex-shrink: 0;
     }
+    .header-icon svg { width: 19px; height: 19px; display: block; }
 
-    /* Status badge */
+    .header-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
+    /* Status badge — landing pill language: solid emerald vs neutral zinc */
     .badge {
       display: inline-flex;
       align-items: center;
       gap: 5px;
-      padding: 2px 8px;
+      padding: 3px 9px;
       border-radius: 9999px;
+      font-family: "GeistMono", ui-monospace, monospace;
       font-size: 10px;
       font-weight: 600;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.06em;
       text-transform: uppercase;
-      font-family: "GeistMono", ui-monospace, monospace;
       border: 1px solid transparent;
       transition: background 0.2s, color 0.2s, border-color 0.2s;
+      flex-shrink: 0;
     }
-    .badge.on  { background: var(--green-bg); color: var(--green); border-color: rgba(34,197,94,0.2); }
-    .badge.off { background: var(--red-bg);   color: var(--red);   border-color: rgba(248,113,113,0.2); }
+    .badge.on  {
+      background: var(--emerald-soft);
+      color: var(--emerald-text);
+      border-color: var(--emerald-border);
+    }
+    .badge.off {
+      background: var(--kbd-bg);
+      color: var(--fg-muted);
+      border-color: var(--border);
+    }
 
-    .badge-dot {
-      width: 5px; height: 5px;
-      border-radius: 50%;
-      background: currentColor;
-    }
+    .badge-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+    .badge.on .badge-dot { background: var(--emerald); }
 
     /* ─────────────────────────────────────────────────────────────────────
        Body sections
     ───────────────────────────────────────────────────────────────────── */
-    .section {
-      padding: 12px 14px;
-    }
-    .section + .section {
-      border-top: 1px solid var(--border);
-    }
+    .section { padding: 13px 14px; }
+    .section + .section { border-top: 1px solid var(--border); }
 
     /* Toggle row */
     .row {
@@ -196,28 +218,29 @@
       gap: 12px;
     }
 
-    /* shadcn Switch */
-    .switch { position: relative; width: 36px; height: 20px; flex-shrink: 0; cursor: pointer; }
+    /* Switch — zinc track off, solid emerald track on */
+    .switch { position: relative; width: 38px; height: 21px; flex-shrink: 0; cursor: pointer; }
     .switch input { position: absolute; opacity: 0; width: 0; height: 0; }
     .switch-track {
       position: absolute; inset: 0;
-      background: var(--surface-2);
+      background: var(--track);
       border: 1px solid var(--border-strong);
       border-radius: 9999px;
       transition: background 0.2s, border-color 0.2s;
     }
     .switch-thumb {
       position: absolute;
-      width: 14px; height: 14px;
+      width: 15px; height: 15px;
       top: 2px; left: 2px;
       background: var(--fg-muted);
       border-radius: 50%;
       transition: transform 0.2s cubic-bezier(0.34,1.56,0.64,1), background 0.2s;
     }
-    .switch input:checked ~ .switch-track { background: var(--blue); border-color: var(--blue); }
-    .switch input:checked ~ .switch-thumb { transform: translateX(16px); background: #fff; }
+    .switch input:checked ~ .switch-track { background: var(--emerald); border-color: var(--emerald); }
+    .switch input:checked ~ .switch-thumb { transform: translateX(17px); background: var(--bg); }
+    .switch input:focus-visible ~ .switch-track { outline: 2px solid var(--emerald); outline-offset: 2px; }
 
-    /* Speed */
+    /* Speed — label + solid emerald value pill (hero v1.3 pill language) */
     .speed-header {
       display: flex;
       align-items: center;
@@ -225,11 +248,15 @@
       margin-bottom: 10px;
     }
     .speed-badge {
-      background: var(--blue-bg);
-      color: var(--blue);
-      border: 1px solid var(--blue-border);
-      border-radius: var(--radius-sm);
-      padding: 1px 7px;
+      background: var(--emerald);
+      color: var(--bg);
+      border-radius: 9999px;
+      padding: 2px 8px;
+      font-family: "GeistMono", ui-monospace, monospace;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      font-variant-numeric: tabular-nums;
     }
 
     input[type=range] {
@@ -237,83 +264,99 @@
       height: 4px;
       appearance: none;
       -webkit-appearance: none;
-      background: var(--surface-2);
+      background: var(--track);
       border-radius: 9999px;
       cursor: pointer;
       outline: none;
     }
     input[type=range]::-webkit-slider-thumb {
       -webkit-appearance: none;
-      width: 14px; height: 14px;
+      width: 15px; height: 15px;
       background: #fff;
-      border: 2px solid var(--blue);
+      border: 2px solid var(--emerald);
       border-radius: 50%;
-      box-shadow: 0 0 0 3px var(--blue-bg);
+      box-shadow: 0 0 0 3px var(--emerald-soft);
       transition: box-shadow 0.15s;
     }
-    input[type=range]:hover::-webkit-slider-thumb {
-      box-shadow: 0 0 0 5px var(--blue-bg);
+    input[type=range]:hover::-webkit-slider-thumb { box-shadow: 0 0 0 5px var(--emerald-soft); }
+    input[type=range]::-moz-range-thumb {
+      width: 11px; height: 11px;
+      background: #fff;
+      border: 2px solid var(--emerald);
+      border-radius: 50%;
+      box-shadow: 0 0 0 3px var(--emerald-soft);
     }
+    input[type=range]:focus-visible { outline: 2px solid var(--emerald); outline-offset: 4px; border-radius: 9999px; }
 
     /* ─────────────────────────────────────────────────────────────────────
-       Keyboard cluster
+       Key cluster — landing KeyCap language:
+       zinc-800 tile, zinc-700 border, mono letter + emerald arrow
     ───────────────────────────────────────────────────────────────────── */
     .keymap {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      gap: 4px;
+      gap: 6px;
       place-items: center;
     }
 
     .key {
-      width: 30px; height: 28px;
-      display: flex; align-items: center; justify-content: center;
-      background: var(--surface-2);
-      border: 1px solid var(--border-strong);
-      border-bottom: 2px solid rgba(0,0,0,0.4);
-      border-radius: var(--radius-sm);
+      width: 100%;
+      max-width: 56px;
+      height: 40px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 1px;
+      background: var(--keycap);
+      border: 1px solid var(--keycap-border);
+      border-bottom-width: 2px;
+      border-bottom-color: rgba(0,0,0,0.5);
+      border-radius: 10px;
       font-family: "GeistMono", ui-monospace, monospace;
-      font-size: 11px;
-      font-weight: 500;
-      color: var(--fg-muted);
       user-select: none;
-      transition: all 0.15s ease;
+      transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
     }
+    .key-letter { font-size: 12px; font-weight: 700; letter-spacing: 0; color: var(--fg-faint); line-height: 1.2; transition: color 0.15s; }
+    .key-arrow { font-size: 8px; line-height: 1; color: var(--fg-faint); transition: color 0.15s; }
     .key.active {
-      background: var(--blue-bg);
-      border-color: var(--blue-border);
-      border-bottom-color: rgba(59,130,246,0.4);
-      color: var(--blue);
+      background: var(--emerald-soft);
+      border-color: var(--emerald-border);
+      border-bottom-color: rgba(52,211,153,0.45);
     }
+    .key.active .key-letter { color: var(--emerald-text); }
+    .key.active .key-arrow { color: var(--emerald); }
     .key.empty { visibility: hidden; }
 
     /* ─────────────────────────────────────────────────────────────────────
-       Footer
+       Footer — landing kbd language
     ───────────────────────────────────────────────────────────────────── */
     .footer {
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 4px;
-      padding: 9px 14px;
+      gap: 5px;
+      padding: 10px 14px;
       border-top: 1px solid var(--border);
-      background: var(--bg);
+      background: transparent;
     }
 
     kbd {
       font-family: "GeistMono", ui-monospace, monospace;
       font-size: 10px;
-      font-weight: 500;
-      background: var(--surface-2);
-      border: 1px solid var(--border-strong);
-      border-bottom: 2px solid rgba(0,0,0,0.35);
-      border-radius: 4px;
-      padding: 1px 5px;
-      color: var(--fg-muted);
+      font-weight: 600;
+      background: var(--kbd-bg);
+      border: 1px solid var(--border);
+      border-bottom-width: 2px;
+      border-radius: var(--radius-kbd);
+      padding: 1px 6px;
+      color: var(--kbd-fg);
+      line-height: 1.5;
     }
 
     /* outer padding */
     .popup { padding: 10px; background: var(--bg); }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { transition: none !important; animation: none !important; }
+    }
   </style>
 </head>
 <body>
@@ -323,8 +366,20 @@
     <!-- Header -->
     <div class="header">
       <div class="header-left">
-        <div class="header-icon">🎮</div>
-        <span class="t-heading">WASD Scroller</span>
+        <div class="header-icon" aria-hidden="true">
+          <svg viewBox="0 0 100 100" fill="#34D399" role="img" aria-label="WASD Scroller logo">
+            <rect x="39" y="24" width="22" height="22" rx="6"/>
+            <g opacity="0.45">
+              <rect x="10" y="54" width="22" height="22" rx="6"/>
+              <rect x="39" y="54" width="22" height="22" rx="6"/>
+              <rect x="68" y="54" width="22" height="22" rx="6"/>
+            </g>
+          </svg>
+        </div>
+        <div class="header-title">
+          <span class="t-heading">WASD Scroller</span>
+          <span class="t-sub">SCROLL LIKE YOU MOVE IN-GAME</span>
+        </div>
       </div>
       <div class="badge on" id="statusBadge">
         <span class="badge-dot" id="badgeDot"></span>
@@ -351,33 +406,33 @@
     <div class="section">
       <div class="speed-header">
         <span class="t-label">Speed</span>
-        <span class="t-mono speed-badge" id="speedVal">8 px/f</span>
+        <span class="speed-badge" id="speedVal">8 px/f</span>
       </div>
       <input type="range" id="speed" min="2" max="30" value="8" step="1" aria-label="Scroll speed" />
       <div class="row" style="margin-top:6px">
-        <span class="t-small">Slow</span>
-        <span class="t-small">Fast</span>
+        <span class="t-body" style="font-size:11px">Slow</span>
+        <span class="t-body" style="font-size:11px">Fast</span>
       </div>
     </div>
 
     <!-- Key cluster -->
     <div class="section">
-      <div class="t-small" style="margin-bottom:8px;text-transform:uppercase;letter-spacing:0.06em">Key layout</div>
+      <div class="t-eyebrow" style="margin-bottom:9px">Key layout</div>
       <div class="keymap">
-        <div class="key empty"></div>
-        <div class="key active" id="kW">W</div>
-        <div class="key empty"></div>
-        <div class="key active" id="kA">A</div>
-        <div class="key active" id="kS">S</div>
-        <div class="key active" id="kD">D</div>
+        <div class="key empty" aria-hidden="true"></div>
+        <div class="key active" id="kW" aria-hidden="true"><span class="key-letter">W</span><span class="key-arrow">▲</span></div>
+        <div class="key empty" aria-hidden="true"></div>
+        <div class="key active" id="kA" aria-hidden="true"><span class="key-letter">A</span><span class="key-arrow">◀</span></div>
+        <div class="key active" id="kS" aria-hidden="true"><span class="key-letter">S</span><span class="key-arrow">▼</span></div>
+        <div class="key active" id="kD" aria-hidden="true"><span class="key-letter">D</span><span class="key-arrow">▶</span></div>
       </div>
     </div>
 
     <!-- Footer -->
     <div class="footer">
-      <span class="t-small">Toggle anywhere with</span>
+      <span class="t-body" style="font-size:11px">Toggle anywhere with</span>
       <kbd>Alt</kbd>
-      <span class="t-small">+</span>
+      <span class="t-body" style="font-size:11px">+</span>
       <kbd>S</kbd>
     </div>
 
